@@ -120,7 +120,12 @@ async def _process_generation_task_async(task_id: int) -> bool:
             elif task.task_type == "edit":
                 if task.source_image_url is None:
                     raise ValueError("Edit task requires source_image_url")
-                result = await image_provider.edit(task.source_image_url, task.prompt)
+                # Pass bot token for Telegram file download
+                result = await image_provider.edit(
+                    task.source_image_url,
+                    task.prompt,
+                    bot_token=config.bot_token
+                )
             else:
                 raise ValueError(f"Unknown task type: {task.task_type}")
             
