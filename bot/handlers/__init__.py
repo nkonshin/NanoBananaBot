@@ -12,6 +12,7 @@ from bot.handlers.balance import router as balance_router
 from bot.handlers.tokens import router as tokens_router
 from bot.handlers.trends import router as trends_router
 from bot.handlers.guide import router as guide_router
+from bot.handlers.admin import router as admin_router
 from bot.handlers.errors import router as errors_router
 
 
@@ -24,6 +25,7 @@ def register_all_handlers(dp: Dispatcher) -> None:
     """
     # Register routers in order of specificity
     dp.include_router(start_router)      # /start command
+    dp.include_router(admin_router)      # Admin commands (/admin, /stats, etc.)
     dp.include_router(guide_router)      # /guide command and button
     dp.include_router(generate_router)   # Generation flow (FSM)
     dp.include_router(edit_router)       # Edit flow (FSM)
@@ -48,5 +50,6 @@ __all__ = [
     "tokens_router",
     "trends_router",
     "guide_router",
+    "admin_router",
     "errors_router",
 ]

@@ -6,6 +6,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
 
+from bot.config import config
 from bot.db.database import get_session_maker
 from bot.db.repositories import UserRepository, TaskRepository
 from bot.services.balance import BalanceService, InsufficientBalanceError
@@ -23,8 +24,6 @@ from bot.states.generation import TemplateStates
 logger = logging.getLogger(__name__)
 
 router = Router(name="trends")
-
-HIGH_COST_THRESHOLD = 4000
 
 
 # Note: Main trends menu is handled in menu.py
@@ -277,7 +276,7 @@ async def confirm_template_generation(callback: CallbackQuery, state: FSMContext
         try:
             cost = estimate_image_tokens(quality, size) * template.tokens_cost
 
-            if cost >= HIGH_COST_THRESHOLD and not expensive_confirmed:
+            if cost >= config.high_cost_threshold and not expensive_confirmed:
                 user_repo = UserRepository(session)
                 user = await user_repo.get_by_telegram_id(callback.from_user.id)
                 balance = user.tokens if user else 0

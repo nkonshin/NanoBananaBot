@@ -1,7 +1,8 @@
 """Application configuration loaded from environment variables."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,6 +17,16 @@ def _parse_bool(value: str, default: bool = False) -> bool:
     if value in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+
+def _parse_int_list(value: str) -> List[int]:
+    """Parse comma-separated list of integers (Telegram IDs)."""
+    if not value:
+        return []
+    try:
+        return [int(x.strip()) for x in value.split(",") if x.strip()]
+    except ValueError:
+        return []
 
 
 @dataclass
@@ -50,6 +61,18 @@ class Config:
     webhook_secret_token: str
     use_redis_fsm_storage: bool
 
+    # Generation settings
+    high_cost_threshold: int  # Порог для двойного подтверждения
+    max_tasks_per_user_per_hour: int  # Rate limiting
+
+    # Admin settings
+    admin_ids: List[int] = field(default_factory=list)  # Telegram IDs админов
+    admin_api_key: str = ""  # API ключ для HTTP админ-эндпоинтов
+
+    def is_admin(self, telegram_id: int) -> bool:
+        """Check if user is admin."""
+        return telegram_id in self.admin_ids
+
 
 def load_config() -> Config:
     """Load configuration from environment variables."""
@@ -74,6 +97,14 @@ def load_config() -> Config:
 
         webhook_secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", ""),
         use_redis_fsm_storage=_parse_bool(os.getenv("USE_REDIS_FSM_STORAGE", "0"), default=False),
+
+        # Generation settings
+        high_cost_threshold=int(os.getenv("HIGH_COST_THRESHOLD", "4000")),
+        max_tasks_per_user_per_hour=int(os.getenv("MAX_TASKS_PER_USER_PER_HOUR", "20")),
+
+        # Admin settings
+        admin_ids=_parse_int_list(os.getenv("ADMIN_IDS", "")),
+        admin_api_key=os.getenv("ADMIN_API_KEY", ""),
     )
 
 

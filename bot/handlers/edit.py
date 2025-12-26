@@ -6,6 +6,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, PhotoSize
 from aiogram.fsm.context import FSMContext
 
+from bot.config import config
 from bot.db.database import get_session_maker
 from bot.db.repositories import UserRepository, TaskRepository
 from bot.services.balance import BalanceService, InsufficientBalanceError
@@ -21,8 +22,6 @@ from bot.states.generation import EditStates
 logger = logging.getLogger(__name__)
 
 router = Router(name="edit")
-
-HIGH_COST_THRESHOLD = 4000
 
 
 def _build_confirmation_text(
@@ -398,7 +397,7 @@ async def confirm_edit(callback: CallbackQuery, state: FSMContext) -> None:
 
     cost = estimate_image_tokens(quality, size)
 
-    if cost >= HIGH_COST_THRESHOLD and not expensive_confirmed:
+    if cost >= config.high_cost_threshold and not expensive_confirmed:
         session_maker = get_session_maker()
         async with session_maker() as session:
             user_repo = UserRepository(session)

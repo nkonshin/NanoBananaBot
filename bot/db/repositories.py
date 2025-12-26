@@ -1,8 +1,9 @@
 """Repository classes for database CRUD operations."""
 
+from datetime import datetime, timedelta
 from typing import Optional, List
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import config
@@ -258,3 +259,131 @@ class TaskRepository:
             select(GenerationTask).where(GenerationTask.id == task_id)
         )
         return result.scalar_one_or_none()
+
+    async def count_user_tasks_since(
+        self,
+        user_id: int,
+        hours: int = 1,
+    ) -> int:
+        """
+        Count user's tasks created in the last N hours.
+        Used for rate limiting.
+        
+        Args:
+            user_id: User's database ID
+            hours: Number of hours to look back
+        
+        Returns:
+            Number of tasks created in the time period
+        """
+        since = datetime.utcnow() - timedelta(hours=hours)
+        result = await self.session.execute(
+            select(func.count(GenerationTask.id))
+            .where(GenerationTask.user_id == user_id)
+            .where(GenerationTask.created_at >= since)
+        )
+        return result.scalar() or 0
+
+
+class StatsRepository:
+    """Repository for statistics queries."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_total_users(self) -> int:
+        """Get total number of users."""
+        result = await self.session.execute(
+            select(func.count(User.id))
+        )
+        return result.scalar() or 0
+    
+    async def get_total_tasks(self) -> int:
+        """Get total number of tasks."""
+        result = await self.session.execute(
+            select(func.count(GenerationTask.id))
+        )
+        return result.scalar() or 0
+    
+    async def get_tasks_by_status(self) -> dict:
+        """Get task counts grouped by status."""
+        result = await self.session.execute(
+            select(
+                GenerationTask.status,
+                func.count(GenerationTask.id)
+            ).group_by(GenerationTask.status)
+        )
+        return {row[0]: row[1] for row in result.all()}
+    
+    async def get_total_tokens_spent(self) -> int:
+        """Get total tokens spent across all tasks."""
+        result = await self.session.execute(
+            select(func.sum(GenerationTask.tokens_spent))
+        )
+        return result.scalar() or 0
+    
+    async def get_tasks_today(self) -> int:
+        """Get number of tasks created today."""
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await self.session.execute(
+            select(func.count(GenerationTask.id))
+            .where(GenerationTask.created_at >= today)
+        )
+        return result.scalar() or 0
+    
+    async def get_users_today(self) -> int:
+        """Get number of users registered today."""
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await self.session.execute(
+            select(func.count(User.id))
+            .where(User.created_at >= today)
+        )
+        return result.scalar() or 0
+    
+    async def get_active_users_today(self) -> int:
+        """Get number of users who created tasks today."""
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await self.session.execute(
+            select(func.count(func.distinct(GenerationTask.user_id)))
+            .where(GenerationTask.created_at >= today)
+        )
+        return result.scalar() or 0
+    
+    async def get_top_users(self, limit: int = 10) -> List[tuple]:
+        """Get top users by number of tasks."""
+        result = await self.session.execute(
+            select(
+                User.telegram_id,
+                User.username,
+                User.first_name,
+                func.count(GenerationTask.id).label("task_count")
+            )
+            .join(GenerationTask, User.id == GenerationTask.user_id)
+            .group_by(User.id)
+            .order_by(desc("task_count"))
+            .limit(limit)
+        )
+        return result.all()
+    
+    async def get_model_usage(self) -> dict:
+        """Get task counts grouped by model."""
+        result = await self.session.execute(
+            select(
+                GenerationTask.model,
+                func.count(GenerationTask.id)
+            ).group_by(GenerationTask.model)
+        )
+        return {row[0]: row[1] for row in result.all()}
+    
+    async def get_full_stats(self) -> dict:
+        """Get comprehensive statistics."""
+        return {
+            "total_users": await self.get_total_users(),
+            "total_tasks": await self.get_total_tasks(),
+            "tasks_by_status": await self.get_tasks_by_status(),
+            "total_tokens_spent": await self.get_total_tokens_spent(),
+            "tasks_today": await self.get_tasks_today(),
+            "users_today": await self.get_users_today(),
+            "active_users_today": await self.get_active_users_today(),
+            "model_usage": await self.get_model_usage(),
+        }

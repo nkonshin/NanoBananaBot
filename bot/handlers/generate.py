@@ -6,6 +6,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
+from bot.config import config
 from bot.db.database import get_session_maker
 from bot.db.repositories import UserRepository, TaskRepository
 from bot.services.balance import BalanceService, InsufficientBalanceError
@@ -22,8 +23,6 @@ logger = logging.getLogger(__name__)
 
 router = Router(name="generate")
 
-HIGH_COST_THRESHOLD = 4000
-
 
 def _build_confirmation_text(
     prompt: str,
@@ -34,7 +33,7 @@ def _build_confirmation_text(
     model: str,
     second_confirm: bool = False,
 ) -> str:
-    warning = "\n⚠️ <b>Внимание:</b> дорогая генерация." if cost >= HIGH_COST_THRESHOLD else ""
+    warning = "\n⚠️ <b>Внимание:</b> дорогая генерация." if cost >= config.high_cost_threshold else ""
 
     confirm_line = "Подтвердить генерацию ещё раз?" if second_confirm else "Подтвердить генерацию?"
 
@@ -244,7 +243,7 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext) -> None
 
     cost = estimate_image_tokens(quality, size)
 
-    if cost >= HIGH_COST_THRESHOLD and not expensive_confirmed:
+    if cost >= config.high_cost_threshold and not expensive_confirmed:
         session_maker = get_session_maker()
         async with session_maker() as session:
             user_repo = UserRepository(session)
