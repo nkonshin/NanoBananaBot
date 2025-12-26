@@ -21,6 +21,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=DEBUG
+      - USE_REDIS_FSM_STORAGE=0
 
   worker:
     volumes:
@@ -29,3 +30,4 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=DEBUG
+      - USE_REDIS_FSM_STORAGE=0

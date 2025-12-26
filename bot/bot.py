@@ -35,10 +35,16 @@ def get_dispatcher() -> Dispatcher:
     """Get or create the Dispatcher instance with FSM storage."""
     global _dp
     if _dp is None:
-        # Use MemoryStorage for MVP (simple, no external dependencies)
-        storage = MemoryStorage()
-        _dp = Dispatcher(storage=storage)
-        logger.info("Dispatcher created with MemoryStorage")
+        if config.use_redis_fsm_storage:
+            from aiogram.fsm.storage.redis import RedisStorage
+
+            storage = RedisStorage.from_url(config.redis_url)
+            _dp = Dispatcher(storage=storage)
+            logger.info("Dispatcher created with RedisStorage")
+        else:
+            storage = MemoryStorage()
+            _dp = Dispatcher(storage=storage)
+            logger.info("Dispatcher created with MemoryStorage")
     return _dp
 
 

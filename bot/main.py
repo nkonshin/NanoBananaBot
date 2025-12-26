@@ -6,6 +6,7 @@ This module provides:
 - Shutdown: delete webhook, close connections
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -19,7 +20,7 @@ from bot.handlers import register_all_handlers
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, config.log_level.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -60,17 +61,37 @@ async def lifespan(app: FastAPI):
     logger.info("Handlers registered")
     
     # Set webhook
-    if config.webhook_url:
+    if config.disable_webhook:
+        logger.warning("Webhook disabled by DISABLE_WEBHOOK=1")
+    elif config.webhook_url:
         webhook_url = f"{config.webhook_url}/webhook"
-        try:
-            await bot.set_webhook(
-                url=webhook_url,
-                drop_pending_updates=True,
-            )
-            logger.info(f"Webhook set to: {webhook_url}")
-        except Exception as e:
-            logger.error(f"Failed to set webhook: {e}")
-            raise
+
+        delay = max(config.webhook_retry_delay_seconds, 0.1)
+        for attempt in range(1, max(config.webhook_max_retries, 1) + 1):
+            try:
+                secret_token = config.webhook_secret_token or None
+                await bot.set_webhook(
+                    url=webhook_url,
+                    drop_pending_updates=True,
+                    request_timeout=config.telegram_request_timeout,
+                    secret_token=secret_token,
+                )
+                logger.info(f"Webhook set to: {webhook_url}")
+                break
+            except Exception:
+                logger.exception(
+                    "Failed to set webhook (attempt %s/%s)",
+                    attempt,
+                    config.webhook_max_retries,
+                )
+                if attempt >= config.webhook_max_retries:
+                    logger.error(
+                        "Webhook was not set after %s attempts; continuing startup.",
+                        config.webhook_max_retries,
+                    )
+                    break
+                await asyncio.sleep(delay)
+                delay *= max(config.webhook_retry_backoff, 1.0)
     else:
         logger.warning("WEBHOOK_URL not configured, webhook not set")
     
@@ -80,9 +101,9 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application...")
     
     # Delete webhook
-    if config.webhook_url:
+    if (not config.disable_webhook) and config.webhook_url and config.delete_webhook_on_shutdown:
         try:
-            await bot.delete_webhook()
+            await bot.delete_webhook(request_timeout=config.telegram_request_timeout)
             logger.info("Webhook deleted")
         except Exception as e:
             logger.error(f"Failed to delete webhook: {e}")
@@ -113,6 +134,12 @@ async def webhook(request: Request) -> Response:
     Receives updates from Telegram and processes them through aiogram dispatcher.
     """
     try:
+        if config.webhook_secret_token:
+            request_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+            if request_secret != config.webhook_secret_token:
+                logger.warning("Webhook request rejected: invalid secret token")
+                return Response(status_code=403)
+
         # Parse update from request body
         update_data = await request.json()
         update = Update.model_validate(update_data)
@@ -126,8 +153,8 @@ async def webhook(request: Request) -> Response:
         
         return Response(status_code=200)
     
-    except Exception as e:
-        logger.error(f"Error processing webhook update: {e}")
+    except Exception:
+        logger.exception("Error processing webhook update")
         # Return 200 to prevent Telegram from retrying
         return Response(status_code=200)
 
