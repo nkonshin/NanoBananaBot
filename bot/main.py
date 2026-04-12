@@ -1,9 +1,10 @@
-"""FastAPI application with Telegram webhook integration.
+"""FastAPI application with Telegram webhook and polling support.
 
 This module provides:
-- POST /webhook endpoint for Telegram updates
-- Startup: set webhook, initialize database
-- Shutdown: delete webhook, close connections
+- POST /webhook endpoint for Telegram updates (webhook mode)
+- Long-polling for Telegram updates (polling mode, USE_POLLING=1)
+- Startup: initialize database, set webhook or start polling
+- Shutdown: cleanup connections
 """
 
 import asyncio
@@ -79,9 +80,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to set bot commands: {e}")
     
-    # Set webhook
-    if config.disable_webhook:
+    # Choose update mode: polling or webhook
+    polling_task = None
+
+    if config.use_polling:
+        # Polling mode — no domain/HTTPS needed
+        # Delete any existing webhook first
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Existing webhook deleted, switching to polling mode")
+        except Exception as e:
+            logger.warning(f"Failed to delete webhook before polling: {e}")
+
+        # Start polling as a background task alongside FastAPI
+        async def _run_polling():
+            try:
+                await dp.start_polling(
+                    bot,
+                    polling_timeout=30,  # Long-poll: Telegram holds connection up to 30s
+                    handle_signals=False,  # FastAPI manages signals
+                )
+            except asyncio.CancelledError:
+                logger.info("Polling task cancelled")
+            except Exception:
+                logger.exception("Polling error")
+
+        polling_task = asyncio.create_task(_run_polling())
+        logger.info("Polling started (timeout=30s, updates arrive instantly)")
+
+    elif config.disable_webhook:
         logger.warning("Webhook disabled by DISABLE_WEBHOOK=1")
+
     elif config.webhook_url:
         webhook_url = f"{config.webhook_url}/webhook"
 
@@ -112,15 +141,25 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(delay)
                 delay *= max(config.webhook_retry_backoff, 1.0)
     else:
-        logger.warning("WEBHOOK_URL not configured, webhook not set")
-    
+        logger.warning("WEBHOOK_URL not configured and USE_POLLING=0, bot will not receive updates")
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down application...")
-    
-    # Delete webhook
-    if (not config.disable_webhook) and config.webhook_url and config.delete_webhook_on_shutdown:
+
+    # Stop polling if running
+    if polling_task is not None:
+        await dp.stop_polling()
+        polling_task.cancel()
+        try:
+            await polling_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Polling stopped")
+
+    # Delete webhook if in webhook mode
+    if (not config.use_polling) and (not config.disable_webhook) and config.webhook_url and config.delete_webhook_on_shutdown:
         try:
             await bot.delete_webhook(request_timeout=config.telegram_request_timeout)
             logger.info("Webhook deleted")

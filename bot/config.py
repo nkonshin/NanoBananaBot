@@ -64,6 +64,7 @@ class Config:
     webhook_retry_backoff: float
     disable_webhook: bool
     delete_webhook_on_shutdown: bool
+    use_polling: bool  # True = polling mode (no domain needed), False = webhook mode
 
     webhook_secret_token: str
     use_redis_fsm_storage: bool
@@ -120,6 +121,7 @@ def load_config() -> Config:
         delete_webhook_on_shutdown=_parse_bool(
             os.getenv("DELETE_WEBHOOK_ON_SHUTDOWN", "1"), default=True
         ),
+        use_polling=_parse_bool(os.getenv("USE_POLLING", "0"), default=False),
 
         webhook_secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", ""),
         use_redis_fsm_storage=_parse_bool(os.getenv("USE_REDIS_FSM_STORAGE", "0"), default=False),
