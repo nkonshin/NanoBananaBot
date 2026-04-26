@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first (for better caching)
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (with retries for unstable network)
+RUN pip install --no-cache-dir --retries 10 --timeout 60 -r requirements.txt
 
 # Development stage (with code mounted as volume)
 FROM base as development
