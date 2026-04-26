@@ -12,8 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first (for better caching)
 COPY requirements.txt .
 
+# Upgrade pip first (older pip has issues with truncated JSON index responses)
+RUN pip install --no-cache-dir --upgrade pip
+
 # Install Python dependencies (with retries for unstable network)
-RUN pip install --no-cache-dir --retries 10 --timeout 60 -r requirements.txt
+# --prefer-binary: avoid source builds; --retries 10: tolerate flaky network
+RUN pip install --no-cache-dir --prefer-binary --retries 10 --timeout 120 -r requirements.txt
 
 # Development stage (with code mounted as volume)
 FROM base as development
